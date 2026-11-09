@@ -1,5 +1,5 @@
 // Keeps the app files on the device so it opens without internet. It never touches names or attendance.
-const VERSION = 'dochazka-2';
+const VERSION = 'dochazka-3';
 const FILES = [
   './',
   './index.html',

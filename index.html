@@ -137,8 +137,11 @@
     </section>
 
     <section class="view" id="view-prehled" role="tabpanel" aria-labelledby="tab-prehled" hidden>
-      <p class="summary" id="summary"></p>
-      <div class="scroll" id="table-wrap"><table id="table"></table></div>
+      <div class="overview-head">
+        <p class="summary" id="summary"></p>
+        <span class="fine" id="zoom" hidden>Velikost tabulky změníš štípnutím</span>
+      </div>
+      <div class="scroll sticky-head" id="table-wrap"><table id="table"></table></div>
       <p class="fine">Trénink se počítá, jakmile je v něm aspoň jedna značka.</p>
       <div class="actions">
         <button class="ghost" id="export" type="button" hidden>Stáhnout pro Excel</button>

@@ -287,6 +287,7 @@
     const table = $('grid');
     table.textContent = '';
     table.classList.toggle('single', sessions.length === 1);
+    $('grid-wrap').classList.toggle('sticky-head', sessions.length > 1);
 
     const thead = el('thead');
     const hr = el('tr');
@@ -687,6 +688,68 @@
     }
   }
 
+  const ZOOM_MIN = 0.4;
+  const ZOOM_MAX = 1.6;
+  let zoom = 1;
+  try {
+    const saved = Number(localStorage.getItem('dochazka-zoom'));
+    if (saved >= ZOOM_MIN && saved <= ZOOM_MAX) zoom = saved;
+  } catch { /* default size */ }
+
+  function applyZoom() {
+    $('table-wrap').style.setProperty('--z', String(zoom));
+  }
+
+  (() => {
+    const wrap = $('table-wrap');
+    let pinch = null;
+    let saveTimer = null;
+    const save = () => {
+      try { localStorage.setItem('dochazka-zoom', String(zoom)); } catch { /* not remembered */ }
+    };
+    const distance = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const setZoom = (next, cx, cy) => {
+      const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+      if (z === zoom) return;
+      const rect = wrap.getBoundingClientRect();
+      const x = cx - rect.left;
+      const y = cy - rect.top;
+      const ratio = z / zoom;
+      const left = (wrap.scrollLeft + x) * ratio - x;
+      const top = (wrap.scrollTop + y) * ratio - y;
+      zoom = z;
+      applyZoom();
+      wrap.scrollLeft = left;
+      wrap.scrollTop = top;
+    };
+    wrap.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) pinch = { d: distance(e.touches), z: zoom };
+    }, { passive: true });
+    wrap.addEventListener('touchmove', e => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const t = e.touches;
+      setZoom(pinch.z * (distance(t) / pinch.d), (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+    }, { passive: false });
+    const end = e => {
+      if (!pinch || e.touches.length >= 2) return;
+      pinch = null;
+      save();
+    };
+    wrap.addEventListener('touchend', end);
+    wrap.addEventListener('touchcancel', end);
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      wrap.addEventListener(type, e => e.preventDefault(), { passive: false });
+    }
+    wrap.addEventListener('wheel', e => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(zoom * Math.exp(-e.deltaY / 200), e.clientX, e.clientY);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 300);
+    }, { passive: false });
+  })();
+
   function heldSessions() {
     const out = [];
     for (const w of Object.keys(weeks).sort()) out.push(...weekSessions(w).filter(sessionHasMarks));
@@ -701,6 +764,8 @@
     const summary = $('summary');
     summary.textContent = '';
     $('table-wrap').hidden = !total || !people.length;
+    $('zoom').hidden = !total || !people.length;
+    applyZoom();
     $('export').disabled = !total;
     if (!total || !people.length) {
       summary.textContent = 'Zatím tu není žádný zapsaný trénink.';
