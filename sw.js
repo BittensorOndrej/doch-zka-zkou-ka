@@ -1,5 +1,5 @@
 // Keeps the app files on the device so it opens without internet. It never touches names or attendance.
-const VERSION = 'dochazka-1';
+const VERSION = 'dochazka-2';
 const FILES = [
   './',
   './index.html',
@@ -22,7 +22,7 @@ const FILES = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(VERSION).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting()),
+    caches.open(VERSION).then(cache => cache.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()),
   );
 });
 

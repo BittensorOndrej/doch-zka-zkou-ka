@@ -784,6 +784,307 @@
     }
   }
 
+  /* import */
+  const YES = new Set(['1', 'x', 'ano', 'a', 'yes', 'y', 'true', 'pravda', '✓', '✔', '+']);
+  const COLORED = Object.freeze({ colored: true });
+  const cellText = v => (v === COLORED ? '' : String(v ?? '').trim());
+
+  function isYes(v) {
+    if (v === COLORED) return true;
+    const s = cellText(v).toLocaleLowerCase('cs');
+    if (YES.has(s)) return true;
+    const n = Number(s.replace(',', '.'));
+    return s !== '' && Number.isFinite(n) && n > 0;
+  }
+
+  function decodeText(buf) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(buf);
+    } catch {
+      return new TextDecoder('windows-1250').decode(buf);
+    }
+  }
+
+  function parseCsv(input) {
+    const text = input.replace(/^﻿/, '');
+    const first = text.split(/\r?\n/, 1)[0] || '';
+    const count = ch => first.split(ch).length - 1;
+    const sep = [';', ',', '\t'].sort((a, b) => count(b) - count(a))[0];
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < text.length; i += 1) {
+      const ch = text[i];
+      if (quoted) {
+        if (ch !== '"') cell += ch;
+        else if (text[i + 1] === '"') { cell += '"'; i += 1; }
+        else quoted = false;
+      } else if (ch === '"' && cell === '') {
+        quoted = true;
+      } else if (ch === sep) {
+        row.push(cell);
+        cell = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i += 1;
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = '';
+      } else {
+        cell += ch;
+      }
+    }
+    if (cell !== '' || row.length) {
+      row.push(cell);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  async function parseXlsx(buf) {
+    const bytes = new Uint8Array(buf);
+    const view = new DataView(buf);
+    let end = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i -= 1) {
+      if (view.getUint32(i, true) === 0x06054b50) { end = i; break; }
+    }
+    if (end < 0) throw new Error('zip');
+    const entries = new Map();
+    let p = view.getUint32(end + 16, true);
+    for (let n = view.getUint16(end + 10, true); n > 0; n -= 1) {
+      if (view.getUint32(p, true) !== 0x02014b50) throw new Error('zip');
+      const nameLen = view.getUint16(p + 28, true);
+      const name = new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen));
+      entries.set(name, { method: view.getUint16(p + 10, true), size: view.getUint32(p + 20, true), local: view.getUint32(p + 42, true) });
+      p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+    }
+    const read = async name => {
+      const e = entries.get(name.replace(/^\//, ''));
+      if (!e) return null;
+      const start = e.local + 30 + view.getUint16(e.local + 26, true) + view.getUint16(e.local + 28, true);
+      const data = bytes.subarray(start, start + e.size);
+      if (e.method === 0) return new TextDecoder().decode(data);
+      if (e.method !== 8) throw new Error('zip');
+      return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    };
+    const xml = s => new DOMParser().parseFromString(s, 'application/xml');
+    const all = (node, tag) => [...node.getElementsByTagNameNS('*', tag)];
+
+    let sheetPath = 'xl/worksheets/sheet1.xml';
+    const book = await read('xl/workbook.xml');
+    const rels = await read('xl/_rels/workbook.xml.rels');
+    if (book && rels) {
+      const first = all(xml(book), 'sheet')[0];
+      const rid = first?.getAttribute('r:id')
+        || first?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+      const target = all(xml(rels), 'Relationship').find(r => r.getAttribute('Id') === rid)?.getAttribute('Target');
+      if (target) sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+    }
+    const sheet = await read(sheetPath);
+    if (!sheet) throw new Error('sheet');
+    const sharedXml = await read('xl/sharedStrings.xml');
+    const shared = sharedXml ? all(xml(sharedXml), 'si').map(si => all(si, 't').map(t => t.textContent).join('')) : [];
+
+    const coloredStyle = [];
+    const stylesXml = await read('xl/styles.xml');
+    if (stylesXml) {
+      const styles = xml(stylesXml);
+      const isColor = color => {
+        if (!color || color.getAttribute('auto') === '1') return false;
+        const rgb = color.getAttribute('rgb');
+        if (rgb) {
+          const hex = rgb.slice(-6);
+          return [0, 2, 4].some(i => parseInt(hex.slice(i, i + 2), 16) < 0xf0);
+        }
+        const theme = color.getAttribute('theme');
+        if (theme !== null) return theme !== '0';
+        const indexed = color.getAttribute('indexed');
+        return indexed !== null && !['1', '9', '64', '65'].includes(indexed);
+      };
+      const fills = all(all(styles, 'fills')[0] || styles, 'fill').map(fill => {
+        const pattern = all(fill, 'patternFill')[0];
+        return pattern?.getAttribute('patternType') === 'solid' && isColor(all(pattern, 'fgColor')[0]);
+      });
+      const xfs = all(styles, 'cellXfs')[0];
+      if (xfs) [...xfs.children].forEach((xf, i) => { coloredStyle[i] = fills[Number(xf.getAttribute('fillId'))] === true; });
+    }
+
+    const rows = [];
+    for (const r of all(xml(sheet), 'row')) {
+      const row = [];
+      all(r, 'c').forEach((c, k) => {
+        const letters = (c.getAttribute('r') || '').replace(/\d+/g, '');
+        let col = k;
+        if (letters) {
+          col = 0;
+          for (const ch of letters) col = col * 26 + ch.charCodeAt(0) - 64;
+          col -= 1;
+        }
+        const type = c.getAttribute('t');
+        const v = all(c, 'v')[0]?.textContent ?? '';
+        if (type === 's') row[col] = shared[Number(v)] ?? '';
+        else if (type === 'inlineStr') row[col] = all(c, 't').map(t => t.textContent).join('');
+        else if (type === 'str' || type === 'b' || type === 'e') row[col] = v;
+        else row[col] = v === '' ? '' : Number(v);
+        if (row[col] === '' && coloredStyle[Number(c.getAttribute('s'))]) row[col] = COLORED;
+      });
+      const at = Number(r.getAttribute('r')) - 1;
+      rows[Number.isInteger(at) && at >= rows.length ? at : rows.length] = row;
+    }
+    return Array.from(rows, r => Array.from(r || [], v => v ?? ''));
+  }
+
+  function headerDate(v) {
+    const check = (y, m, d, label) => {
+      const date = new Date(y, m - 1, d);
+      if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+      const text = String(label || '').trim();
+      return { date, label: /^\d{1,2}:\d{2}(:\d{2})?$/.test(text) ? '' : text.slice(0, 40) };
+    };
+    if (typeof v === 'number') {
+      if (v < 20000 || v > 80000) return null;
+      const date = new Date(1899, 11, 30 + Math.floor(v));
+      return check(date.getFullYear(), date.getMonth() + 1, date.getDate(), '');
+    }
+    const s = cellText(v);
+    let m = s.match(/^(?:\p{L}{1,7}\.?\s+)?(\d{1,2})\.\s*(\d{1,2})\.?(?:\s*(\d{4}))?\.?(?:\s+(.+))?$/u);
+    if (m && m[3]) return check(+m[3], +m[2], +m[1], m[4]);
+    if (m) {
+      const today = addDays(new Date(), 0);
+      const year = [-1, 0, 1]
+        .map(n => today.getFullYear() + n)
+        .sort((a, b) => Math.abs(new Date(a, m[2] - 1, +m[1]) - today) - Math.abs(new Date(b, m[2] - 1, +m[1]) - today))[0];
+      return check(year, +m[2], +m[1], m[4]);
+    }
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:T[\d:.]+Z?)?(?:\s+(.+))?$/);
+    if (m) return check(+m[1], +m[2], +m[3], m[4]);
+    return null;
+  }
+
+  function planImport(rows) {
+    const headIndex = rows.findIndex(r => r.some(v => headerDate(v)));
+    if (headIndex < 0) return { error: 'V souboru chybí sloupce s datem tréninku, třeba 3.11.2026.' };
+    const head = rows[headIndex];
+    let nameCol = head.findIndex(v => /^jm[eé]no$/i.test(cellText(v)));
+    if (nameCol < 0) nameCol = head.findIndex(v => !headerDate(v));
+    if (nameCol < 0) return { error: 'V souboru chybí sloupec se jmény.' };
+    const columns = [];
+    head.forEach((v, i) => {
+      const d = i === nameCol ? null : headerDate(v);
+      if (d) columns.push({ i, ...d });
+    });
+
+    const known = new Map(people.map(p => [String(p.name).toLocaleLowerCase('cs'), p.id]));
+    const seen = new Set();
+    const entries = [];
+    for (const row of rows.slice(headIndex + 1)) {
+      let name = cellText(row[nameCol]);
+      if (/^'[=+\-@]/.test(name)) name = name.slice(1);
+      name = name.slice(0, 80);
+      const key = name.toLocaleLowerCase('cs');
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      entries.push({ name, pid: known.get(key) || null, marks: columns.map(c => isYes(row[c.i])) });
+    }
+    if (!entries.length) return { error: 'V souboru nejsou žádná jména.' };
+
+    const fresh = new Map();
+    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const targets = columns.map(c => {
+      const w = weekId(c.date);
+      const same = weekSessions(w).filter(s => s.date.getTime() === c.date.getTime());
+      const label = c.label.toLocaleLowerCase('cs');
+      if (label) {
+        const ev = same.find(s => s.event && String(s.event.name).toLocaleLowerCase('cs') === label);
+        if (ev) return { w, s: ev.s };
+      } else {
+        const found = same.find(s => !s.event) || same[0];
+        if (found) return { w, s: found.s };
+        const idx = daysFor(w).indexOf(c.date.getDay() || 7);
+        if (idx >= 0) return { w, s: SLOTS[idx], restore: true };
+      }
+      const key = `${c.date.getTime()}|${label}`;
+      if (!fresh.has(key)) {
+        fresh.set(key, {
+          w,
+          s: `e${stamp}${fresh.size + 1}`,
+          event: { day: c.date.getDay() || 7, name: c.label || 'Trénink', time: '', attendance: true },
+        });
+      }
+      return fresh.get(key);
+    });
+    return {
+      entries,
+      targets,
+      sessions: new Set(targets.map(t => `${t.w}|${t.s}`)).size,
+      newPeople: entries.filter(e => !e.pid).length,
+      newEvents: fresh.size,
+    };
+  }
+
+  async function applyImport(plan) {
+    await flush();
+    return guard(async () => {
+      for (const e of plan.entries) {
+        if (e.pid) continue;
+        const ref = peopleCol().doc();
+        await ref.set({ name: e.name });
+        e.pid = ref.id;
+      }
+      const byWeek = new Map();
+      plan.targets.forEach((t, k) => {
+        if (!byWeek.has(t.w)) byWeek.set(t.w, {});
+        const patch = byWeek.get(t.w);
+        const marks = (patch[t.s] ||= {});
+        for (const e of plan.entries) marks[e.pid] = e.marks[k];
+        if (t.event) (patch.events ||= {})[t.s] = t.event;
+        if (t.restore) (patch.cancelled ||= {})[t.s] = false;
+      });
+      for (const [w, patch] of byWeek) await writeWeek(w, patch);
+    });
+  }
+
+  let importPlan = null;
+
+  function importMessage(text, warn) {
+    const box = $('import-message');
+    box.textContent = text;
+    box.className = warn ? 'warn' : 'fine';
+    box.hidden = !text;
+  }
+
+  function resetImport() {
+    importPlan = null;
+    $('import-confirm').hidden = true;
+    importMessage('');
+  }
+
+  async function readImportFile(file) {
+    resetImport();
+    if (!file || !gid) return;
+    let rows;
+    try {
+      const buf = await file.arrayBuffer();
+      const head = new Uint8Array(buf, 0, Math.min(2, buf.byteLength));
+      rows = head[0] === 0x50 && head[1] === 0x4b ? await parseXlsx(buf) : parseCsv(decodeText(buf));
+    } catch {
+      importMessage('Soubor se nepodařilo přečíst. Použij soubor .xlsx nebo .csv.', true);
+      return;
+    }
+    const plan = planImport(rows);
+    if (plan.error) {
+      importMessage(plan.error, true);
+      return;
+    }
+    importPlan = plan;
+    const people = plan.newPeople ? ` (nová: ${plan.newPeople})` : '';
+    const events = plan.newEvents ? ` (nové události: ${plan.newEvents})` : '';
+    $('import-text').textContent = `Nahrát ze souboru? Jména: ${plan.entries.length}${people}, tréninky: ${plan.sessions}${events}. Zápis v těchto dnech se přepíše podle souboru.`;
+    $('import-confirm').hidden = false;
+  }
+  /* /import */
+
   function renderRoster() {
     if (document.activeElement?.matches?.('#roster input')) return;
     const list = $('roster');
@@ -957,6 +1258,7 @@
     $('grid').textContent = '';
     $('add-hint').hidden = true;
     showEventForm(false);
+    resetImport();
   }
 
   function showEventForm(show) {
@@ -1153,6 +1455,7 @@
     db = d;
     downloads = dl;
     $('export').hidden = !dl;
+    $('import-label').hidden = false;
 
     let confirmed = false;
     const loadTimer = setTimeout(() => {
@@ -1199,6 +1502,21 @@
   }
   $('retry').addEventListener('click', flush);
   $('export').addEventListener('click', exportCsv);
+  $('import-file').addEventListener('change', e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    readImportFile(file);
+  });
+  $('import-no').addEventListener('click', resetImport);
+  $('import-yes').addEventListener('click', async () => {
+    const plan = importPlan;
+    if (!plan) return;
+    resetImport();
+    if (await applyImport(plan)) {
+      importMessage(`Nahráno. Jména: ${plan.entries.length}, tréninky: ${plan.sessions}.`);
+      refresh(false);
+    }
+  });
   $('notice-link').addEventListener('click', () => showTab('jmena'));
   $('empty-action').addEventListener('click', () => showTab('jmena'));
   for (const t of ['zapis', 'prehled', 'jmena']) {

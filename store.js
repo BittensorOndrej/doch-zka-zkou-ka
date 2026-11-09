@@ -192,7 +192,7 @@
   window.claude = {
     use: async name => {
       if (name === 'db') return (await ready) ? api : null;
-      if (name === 'downloads') return { save: saveFile };
+      if (name === 'downloads') return { save: ({ filename, data }) => saveFile(filename, data) };
       return null;
     },
   };
@@ -279,5 +279,12 @@
   renderSafety();
   navigator.storage?.persist?.().then(renderSafety).catch(() => {});
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController) $('update-ready').hidden = false;
+    });
+    $('update-reload').addEventListener('click', () => location.reload());
+    navigator.serviceWorker.register('./sw.js').then(reg => reg.update()).catch(() => {});
+  }
 })();

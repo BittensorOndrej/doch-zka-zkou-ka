@@ -442,6 +442,9 @@ th.who {
 }
 .dot.on { background: var(--present); box-shadow: none; color: var(--present-ink); }
 .fine { margin: 0; color: var(--muted); font-size: 13px; }
+.file-button { display: inline-flex; align-items: center; cursor: pointer; }
+.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-input:focus-visible + .file-button, .file-button:has(+ .file-input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .field { display: grid; gap: 6px; }
 .field label, .section-title { font-weight: 600; }
@@ -477,6 +480,3 @@ select { min-height: 46px; padding: 0 10px; }
   .who-btn:active { transform: none; }
   .cal-grid.from-next, .cal-grid.from-prev { animation: none; }
 }
-
-.file-button { display: inline-flex; align-items: center; cursor: pointer; }
-.file-input { position: absolute; width: 1px; height: 1px; opacity: 0; }

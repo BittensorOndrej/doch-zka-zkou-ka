@@ -29,6 +29,7 @@
   </header>
 
   <section class="view" id="home" aria-label="Skupiny">
+    <p class="notice" id="update-ready" hidden>Je připravená nová verze aplikace. <button class="link" id="update-reload" type="button">Načíst</button></p>
     <p class="notice" id="install" hidden>Aplikace je otevřená v prohlížeči. V Safari klepni na Sdílet a vyber Přidat na plochu. Pak ji otevírej jen z ikony, data z prohlížeče se do ní nepřenesou.</p>
     <ul class="groups" id="groups"></ul>
     <div class="empty" id="home-empty">
@@ -139,7 +140,18 @@
       <p class="summary" id="summary"></p>
       <div class="scroll" id="table-wrap"><table id="table"></table></div>
       <p class="fine">Trénink se počítá, jakmile je v něm aspoň jedna značka.</p>
-      <div><button class="ghost" id="export" type="button" hidden>Stáhnout pro Excel</button></div>
+      <div class="actions">
+        <button class="ghost" id="export" type="button" hidden>Stáhnout pro Excel</button>
+        <label class="ghost file-button" id="import-label" for="import-file" hidden>Nahrát z Excelu</label>
+        <input class="file-input" id="import-file" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </div>
+      <p class="fine">Nahrát jde soubor .xlsx nebo .csv: jména v prvním sloupci, data tréninků v záhlaví (třeba 10.11.) a u přítomných 1, x nebo barevná buňka.</p>
+      <p class="fine" id="import-message" hidden></p>
+      <div class="actions" id="import-confirm" hidden>
+        <span class="warn" id="import-text"></span>
+        <button class="primary" id="import-yes" type="button">Nahrát</button>
+        <button class="ghost" id="import-no" type="button">Zpět</button>
+      </div>
     </section>
 
     <section class="view" id="view-jmena" role="tabpanel" aria-labelledby="tab-jmena" hidden>
