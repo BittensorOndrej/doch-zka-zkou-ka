@@ -485,6 +485,7 @@ select { min-height: 46px; padding: 0 10px; }
 .group { display: grid; gap: 8px; }
 .roster { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .roster-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.roster-num { min-width: 2.2em; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 .roster-row .name-input { flex: 1 1 180px; min-width: 0; }
 .name-input { min-height: 46px; padding: 0 12px; }
 .warn { color: var(--danger); font-size: 14px; }

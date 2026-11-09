@@ -1160,8 +1160,11 @@
       list.append(li);
       return;
     }
-    for (const p of people) {
+    for (const [index, p] of people.entries()) {
       const li = el('li', 'roster-row');
+      const num = el('span', 'roster-num');
+      num.textContent = `${index + 1}.`;
+      li.append(num);
       const input = el('input', 'name-input');
       input.id = `name-${p.id}`;
       input.value = p.name;

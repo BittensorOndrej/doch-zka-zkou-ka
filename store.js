@@ -285,6 +285,11 @@
       if (hadController) $('update-ready').hidden = false;
     });
     $('update-reload').addEventListener('click', () => location.reload());
-    navigator.serviceWorker.register('./sw.js').then(reg => reg.update()).catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) reg.update().catch(() => {});
+      });
+    }).catch(() => {});
   }
 })();
