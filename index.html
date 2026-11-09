@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Týdenní docházka</title>
+<meta name="description" content="Docházka uložená jen v telefonu.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#edf1f0">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101716">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Docházka">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <button class="back" id="back" type="button" hidden>‹ Skupiny</button>
+    <h1 id="title">Týdenní docházka</h1>
+    <div id="status" class="status" role="status">
+      <span id="status-text">Načítám…</span>
+      <button id="retry" class="link" type="button" hidden>Zkusit znovu</button>
+    </div>
+  </header>
+
+  <section class="view" id="home" aria-label="Skupiny">
+    <p class="notice" id="install" hidden>Aplikace je otevřená v prohlížeči. V Safari klepni na Sdílet a vyber Přidat na plochu. Pak ji otevírej jen z ikony, data z prohlížeče se do ní nepřenesou.</p>
+    <ul class="groups" id="groups"></ul>
+    <div class="empty" id="home-empty">
+      <strong id="home-empty-title">Načítám skupiny…</strong>
+      <p id="home-empty-text">Za chvíli se tu ukážou.</p>
+    </div>
+    <button class="ghost add-group" id="new-open" type="button" aria-label="Přidat skupinu" hidden>+</button>
+    <form class="panel" id="new-group" hidden>
+      <div class="field">
+        <label for="new-name">Nová skupina</label>
+        <input class="name-input" id="new-name" maxlength="40" placeholder="Název skupiny" autocomplete="off">
+      </div>
+      <div class="group">
+        <div class="section-title">Tréninky (den a čas)</div>
+        <div class="train-list" id="new-rows"></div>
+        <div><button class="ghost" id="new-add" type="button">Přidat trénink</button></div>
+      </div>
+      <p class="warn" id="new-hint" hidden></p>
+      <div class="actions">
+        <button class="primary" id="new-submit" type="submit">Přidat skupinu</button>
+        <button class="ghost" id="new-close" type="button">Zrušit</button>
+      </div>
+    </form>
+    <p class="fine" id="group-limit" hidden></p>
+    <section class="panel" id="backup" aria-labelledby="backup-title">
+      <div class="section-title" id="backup-title">Záloha</div>
+      <p class="fine">Názvy skupin, jména a docházka jsou jen v tomto telefonu a nikam se neodesílají.</p>
+      <p class="fine" id="backup-last"></p>
+      <p class="fine" id="backup-safe"></p>
+      <div class="actions">
+        <button class="ghost" id="backup-save" type="button">Uložit zálohu</button>
+        <label class="ghost file-button" for="backup-file">Obnovit ze zálohy</label>
+        <input class="file-input" id="backup-file" type="file" accept=".txt,.json,text/plain,application/json">
+      </div>
+      <p class="warn" id="backup-message" hidden></p>
+      <div class="actions" id="restore-confirm" hidden>
+        <span class="warn" id="restore-text"></span>
+        <button class="danger" id="restore-yes" type="button">Obnovit</button>
+        <button class="ghost" id="restore-no" type="button">Zpět</button>
+      </div>
+    </section>
+  </section>
+
+  <div class="view" id="group" hidden>
+    <nav class="tabs" role="tablist" aria-label="Části docházky">
+      <button class="tab" id="tab-zapis" role="tab" type="button" aria-controls="view-zapis" aria-selected="true">Zápis</button>
+      <button class="tab" id="tab-prehled" role="tab" type="button" aria-controls="view-prehled" aria-selected="false">Přehled</button>
+      <button class="tab" id="tab-jmena" role="tab" type="button" aria-controls="view-jmena" aria-selected="false">Jména</button>
+    </nav>
+
+    <section class="view" id="view-zapis" role="tabpanel" aria-labelledby="tab-zapis">
+      <p class="notice" id="notice" hidden>Jména jsou zatím ukázka. Své přidáš v záložce <button class="link" id="notice-link" type="button">Jména</button>.</p>
+
+      <div class="modes" id="modes" role="group" aria-label="Které dny ukázat" hidden>
+        <button class="mode" id="mode-one" type="button" aria-pressed="true">Aktuální den</button>
+        <button class="mode" id="mode-all" type="button" aria-pressed="false">Všechny dny</button>
+        <button class="mode" id="mode-pick" type="button" aria-pressed="false">Vybrat dny</button>
+      </div>
+
+      <div class="cal" id="cal" hidden>
+        <div class="cal-head">
+          <button class="ghost" id="cal-prev" type="button" aria-label="Předchozí měsíc">‹</button>
+          <strong id="cal-title"></strong>
+          <button class="ghost" id="cal-next" type="button" aria-label="Další měsíc">›</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="cal-foot" id="cal-foot"></div>
+        <div><button class="ghost" id="event-toggle" type="button">Přidat událost</button></div>
+        <form class="group" id="event-form" hidden>
+          <div class="field">
+            <label for="event-name">Název události</label>
+            <input class="name-input" id="event-name" maxlength="40" placeholder="Např. závody" autocomplete="off">
+          </div>
+          <div class="days">
+            <div class="field"><label for="event-date">Datum</label><input class="name-input" id="event-date" type="date"></div>
+            <div class="field"><label for="event-time">Čas</label><input class="name-input" id="event-time" type="time"></div>
+          </div>
+          <label class="check"><input id="event-att" type="checkbox" checked> Zapisovat docházku</label>
+          <p class="warn" id="event-hint" hidden></p>
+          <div class="actions">
+            <button class="primary" type="submit">Přidat</button>
+            <button class="ghost" id="event-close" type="button">Zrušit</button>
+          </div>
+        </form>
+      </div>
+      <p class="fine" id="pick-hint" hidden>Vyber v kalendáři aspoň jeden trénink.</p>
+
+      <div id="sheet" hidden>
+        <div class="bar">
+          <button class="ghost" id="prev" type="button" aria-label="Předchozí trénink">‹</button>
+          <div class="bar-label">
+            <strong id="active-day"></strong>
+            <span id="count"></span>
+          </div>
+          <button class="ghost" id="next" type="button" aria-label="Další trénink">›</button>
+        </div>
+        <div class="scroll" id="grid-wrap"><table class="grid" id="grid"></table></div>
+      </div>
+
+      <div class="empty" id="empty">
+        <strong id="empty-title">Načítám jména…</strong>
+        <p id="empty-text">Za chvíli tu bude seznam.</p>
+        <button class="primary" id="empty-action" type="button" hidden>Přidat jména</button>
+      </div>
+    </section>
+
+    <section class="view" id="view-prehled" role="tabpanel" aria-labelledby="tab-prehled" hidden>
+      <p class="summary" id="summary"></p>
+      <div class="scroll" id="table-wrap"><table id="table"></table></div>
+      <p class="fine">Trénink se počítá, jakmile je v něm aspoň jedna značka.</p>
+      <div><button class="ghost" id="export" type="button" hidden>Stáhnout pro Excel</button></div>
+    </section>
+
+    <section class="view" id="view-jmena" role="tabpanel" aria-labelledby="tab-jmena" hidden>
+      <form class="field" id="add-form">
+        <label for="add-names">Přidat jména</label>
+        <textarea id="add-names" placeholder="Každé jméno na nový řádek"></textarea>
+        <div><button class="primary" id="add-submit" type="submit">Přidat</button></div>
+        <p class="fine" id="add-hint" hidden></p>
+      </form>
+
+      <div class="group">
+        <div class="section-title">Tréninky (den a čas)</div>
+        <div class="train-list" id="day-rows"></div>
+        <div><button class="ghost" id="day-add" type="button">Přidat trénink</button></div>
+        <p class="fine" id="days-hint">Změna platí pro týdny, které ještě nemají zápis.</p>
+      </div>
+
+      <div class="group">
+        <div class="section-title">Seznam</div>
+        <ul class="roster" id="roster"></ul>
+        <div><button class="ghost" id="clear-examples" type="button" hidden>Smazat ukázková jména</button></div>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
